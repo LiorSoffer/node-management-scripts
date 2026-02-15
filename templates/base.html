@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Node Creator 4000{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    {% block content %}{% endblock %}
+    <nav class="nav">
+        {% block nav %}
+        <a href="/logout">Logout</a>
+        {% endblock %}
+    </nav>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

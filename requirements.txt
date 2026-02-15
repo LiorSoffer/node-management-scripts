@@ -1,0 +1,5 @@
+flask>=3.0
+flask-httpauth>=4.0
+validators>=0.22
+werkzeug>=3.0
+python-dotenv>=1.0

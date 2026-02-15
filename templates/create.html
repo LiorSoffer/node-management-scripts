@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block head_extra %}
+{% if auto_refresh %}
+<meta http-equiv="refresh" content="5">
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<h1>Node Creator 4000</h1>
+
+{% if message %}
+<div class="message {{ message_type | default('warning') }}">{{ message }}</div>
+{% endif %}
+
+{% if not hide_form %}
+<p>Create nodes for <a href="https://github.com/openshift-assisted/assisted-ui-lib" target="_blank" rel="noopener">assisted-ui-lib</a> testing.</p>
+<form action="/" method="post" id="vm_create_form">
+    <label for="url">Discovery ISO URL</label>
+    <textarea id="url" name="url" rows="4" placeholder="Paste the discovery iso URL or a wget command…"></textarea>
+
+    <label for="numofnodes">Number of nodes</label>
+    <input type="text" id="numofnodes" name="numofnodes" value="{{ num_of_nodes }}" inputmode="numeric">
+
+    <label for="nodes-prefix">Optional prefix (for resource management only)</label>
+    <input type="text" id="nodes-prefix" name="node-prefix" value="{{ node_prefix }}" placeholder="e.g. mytest">
+
+    <button type="submit">Create VMs</button>
+</form>
+{% endif %}
+
+<p>{{ running_count }} VM(s) running. <a href="/manage">Manage VMs</a></p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+if (window.history.replaceState) {
+    window.history.replaceState(null, null, window.location.href);
+}
+</script>
+{% endblock %}

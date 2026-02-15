@@ -1,37 +1,42 @@
-from flask import Flask
-from flask import request, redirect
-from flask_httpauth import HTTPBasicAuth
-from werkzeug.security import generate_password_hash, check_password_hash
-import subprocess
+"""
+Web UI to create and manage VMs for assisted-ui-lib testing.
+Audience: UX designers/researchers. Resulting clusters are not for production.
+"""
+
+import os
 import re
+import subprocess
+
 import validators
+from dotenv import load_dotenv
+from flask import Flask, redirect, render_template, request
+from flask_httpauth import HTTPBasicAuth
+from werkzeug.security import check_password_hash
 
-# A simple web ui which allows users easily create nodes for https://github.com/openshift-assisted/assisted-ui-lib for testing purposes.
-# The intended audience are UX designers/researchers which need to be able to go over the whole flow easily but the resulting cluster is not meant to be actually used.
-
-# dependencies:
-# pip install flask
-# pip install Flask-HTTPAuth
+# dependencies: pip install flask flask-httpauth validators
 
 app = Flask(__name__)
 auth = HTTPBasicAuth()
 
-users = {
-}
+users = {}
 
 def init_users():
-    with open ("../users", "r") as usersfile:
+    with open("../users", "r") as usersfile:
         users_and_pass = usersfile.readlines()
         for user_and_pass in users_and_pass:
-            (user, password) = user_and_pass.strip().split('=')
+            (user, password) = user_and_pass.strip().split('=', 1)
             users[user] = password
 
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 init_users()
+
+# Hosts that should not be deleted (e.g. shared masters); read from .env PROTECTED_HOSTS
+_raw = os.environ.get('PROTECTED_HOSTS', '')
+PROTECTED_HOSTS = frozenset(name.strip() for name in _raw.split(',') if name.strip())
 
 @auth.verify_password
 def verify_password(username, password):
-    if username in users and \
-            check_password_hash(users.get(username), password):
+    if username in users and check_password_hash(users.get(username), password):
         return username
 
 @app.route('/logout', methods=['GET'])
@@ -41,137 +46,92 @@ def logout():
 @app.route('/', methods=['GET', 'POST'])
 @auth.login_required
 def create_vms():
-
     def get_running_vms():
-        vm_list = subprocess.check_output(['./host_scripts/get_running_vms.sh']).decode("utf-8").strip().split()
-        return f'{len(vm_list)} VMs running. <a href="/manage">Manage</a>'
+        out = subprocess.check_output(['./host_scripts/get_running_vms.sh']).decode("utf-8").strip()
+        return out.split() if out else []
 
     def get_status():
-        wget = subprocess.check_output(['./host_scripts/get_running_process_count.sh', 'wget']).decode("utf-8").strip()
-        virt_install = subprocess.check_output(['./host_scripts/get_running_process_count.sh', 'virt-install']).decode("utf-8").strip()
-
-        if wget != "2":
-            return "<div>An image is being downloaded</div>"
-        elif virt_install != "2":
-            return "<div>The VM(s) are being created</div> <br/>"
-        return ""
+        wget = subprocess.check_output(['./host_scripts/get_running_process_count.sh', 'wget']).decode('utf-8').strip()
+        virt_install = subprocess.check_output(['./host_scripts/get_running_process_count.sh', 'virt-install']).decode('utf-8').strip()
+        if wget != '2':
+            return 'An image is being downloaded.'
+        if virt_install != '2':
+            return 'The VM(s) are being created.'
+        return ''
 
     def start_vms_on_background(url, num_of_nodes, prefix):
         subprocess.Popen(['./host_scripts/create_vms_from_iso_path.sh', url, num_of_nodes, prefix])
 
-    refresher = """
-        <head>
-            <title>Node Creator 4000</title>
-            <meta http-equiv="refresh" content="5">
-        </head>
-    """
-
-    title = """
-        <head>
-            <title>Node Creator 4000</title>
-        </head>
-    """
-
-    dont_resubmit = """
-        <script>
-        if ( window.history.replaceState ) {
-            window.history.replaceState( null, null, window.location.href );
-        }
-        </script>
-    """
-
-    submit_form = """
-        <div>
-            <form action="/" method="post" id="vm_create_form">
-                <label for="url">Paste the discovery iso URL into this box</label>
-                <br />
-                <textarea id="url" name="url" rows="4" cols="150"></textarea>
-                <br />
-                <label for="numofnodes">Number of nodes you want to create</label>
-                <br />
-                <input type="text" id="numofnodes" name="numofnodes" value="3">
-                <br />
-                <label for="nodes-prefix">Optional prefix (not visible to user anywhere, just helps to manage the resources)</label>
-                <br />
-                <input type="text" id="nodes-prefix" name="node-prefix" value="">
-
-            </form>
-            <button type="submit" form="vm_create_form" value="Submit">Submit</button>
-        <div>
-        <br />
-    """
-
-    logout_button = """
-        <br/ ><a href="/logout">logout</a>
-    """
-
-    vm_create_screen = title + submit_form + get_running_vms() + logout_button
-
+    running = get_running_vms()
     status = get_status()
-    in_progress_message = "Host creation in progress. Please wait until the process finished before submitting a next request. Current status: " + status
+    auto_refresh = bool(status)
+    message = None
+    message_type = 'info'  # default when message is set; overridden for validation/success
+    hide_form = False
+    num_of_nodes = '3'
+    node_prefix = ''
 
-    if status != "":
-        vm_create_screen = in_progress_message + refresher + logout_button
     if request.method == 'POST':
-        if get_status() != "":
-            return in_progress_message + logout_button + dont_resubmit + refresher
+        if status:
+            return render_template(
+                'create.html',
+                message='Host creation in progress. Please wait before submitting again. ' + status,
+                message_type='info',
+                hide_form=True,
+                running_count=len(running),
+                auto_refresh=True,
+                num_of_nodes=request.form.get('numofnodes', '3').strip() or '3',
+                node_prefix=request.form.get('node-prefix', '').strip(),
+            )
+        num_of_nodes = request.form.get('numofnodes', '').strip() or '3'
+        if not num_of_nodes.isnumeric():
+            message = 'The number of nodes must be a number.'
+            message_type = 'warning'
+        else:
+            url = request.form.get('url', '').strip()
+            if url.startswith('wget'):
+                url = re.sub(r'wget -O .*\.iso \'', '', url).rstrip("'")
+            if not url:
+                message = 'The URL cannot be empty.'
+                message_type = 'warning'
+            elif not validators.url(url):
+                message = 'The provided URL is not valid.'
+                message_type = 'warning'
+            else:
+                prefix = request.form.get('node-prefix', '').strip().replace(' ', '') or 'unset'
+                start_vms_on_background(url, num_of_nodes, prefix)
+                status = get_status()
+                auto_refresh = True
+                message = 'Host creation has been submitted. Hosts should appear in the wizard in a few minutes. ' + (status or '')
+                message_type = 'success'
+                hide_form = True
 
-        num_of_nodes = request.form['numofnodes'].strip()
-        if num_of_nodes == "":
-            num_of_nodes = "3"
-        elif not num_of_nodes.isnumeric():
-            return "The number of nodes have to be a number" + dont_resubmit + title
+    if message is None and status:
+        message = 'Host creation in progress. Please wait. ' + status
+        message_type = 'info'
+        hide_form = True
 
-        url = request.form['url']
-        url = url.strip()
-        if url.startswith('wget'):
-            url = re.sub(r"wget -O .*\.iso '", '', url)[:-1]
-
-        if url == "":
-            return "The URL can not be empty" + dont_resubmit + title
-        if not validators.url(url):
-            return "The provided URL is not an actual URL" + dont_resubmit + title
-
-        prefix = request.form['node-prefix']
-        if prefix != "":
-            prefix = prefix.replace(" ", "")
-
-        if prefix == "":
-            prefix = "unset"
-
-        start_vms_on_background(url, num_of_nodes, prefix)
-        return "<div>The host creation has been submitted. The hosts should start showing up in the wizard in few minutes</div><br /> Current status: " + get_status() + dont_resubmit + refresher
-    else:
-        return vm_create_screen
+    return render_template(
+        'create.html',
+        message=message,
+        message_type=message_type,
+        hide_form=hide_form,
+        running_count=len(running),
+        auto_refresh=auto_refresh,
+        num_of_nodes=num_of_nodes or '3',
+        node_prefix=node_prefix,
+    )
 
 @app.route('/manage', methods=['GET', 'POST'])
 @auth.login_required
 def manage_vms():
-    def delete_vms_on_background(vms):
-        subprocess.run(['./host_scripts/delete_vms.sh'] + vms)
-
     def get_running_vms():
-        form_header = """
-            <form action="/manage" method="post" id="vm_delete_form">
-        """
-        form_footer = """
-            <br /> <button type="submit" form="vm_delete_form" value="Submit">Delete selected VMs</button>
-        </form>
-        """
-
-        vm_list = subprocess.check_output(['./host_scripts/get_running_vms.sh']).decode("utf-8").strip().split()
-        vm_checkboxes = [f'<input type="checkbox" id="{vm}" name="vmname" value="{vm}"><label for="{vm}">{vm}</label>'  for vm in vm_list]
-        vms_joined = "<br />".join(vm_checkboxes)
-
-        return form_header + vms_joined + form_footer
-
-    back_button = """
-        <br/ ><a href="/">Back</a> to vm creation form
-    """
+        out = subprocess.check_output(['./host_scripts/get_running_vms.sh']).decode('utf-8').strip()
+        return out.split() if out else []
 
     if request.method == 'POST':
-        vm_list = request.form.getlist('vmname')
-        if (len(vm_list) > 0):
-            delete_vms_on_background(vm_list)
+        to_delete = request.form.getlist('vmname')
+        if to_delete:
+            subprocess.run(['./host_scripts/delete_vms.sh'] + to_delete)
 
-    return get_running_vms() + back_button
+    return render_template('manage.html', vm_list=get_running_vms(), protected_hosts=PROTECTED_HOSTS)

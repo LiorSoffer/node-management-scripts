@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Manage VMs</h1>
+
+<form action="/manage" method="post" id="vm_delete_form">
+    <ul class="vm-list">
+        {% for vm in vm_list %}
+        <li>
+            {% if vm in protected_hosts %}
+            <input type="checkbox" id="vm-{{ loop.index }}" disabled>
+            <label for="vm-{{ loop.index }}" style="margin:0;">{{ vm }}</label> <em>protected</em>
+            {% else %}
+            <input type="checkbox" id="vm-{{ loop.index }}" name="vmname" value="{{ vm }}">
+            <label for="vm-{{ loop.index }}" style="margin:0;">{{ vm }}</label>
+            {% endif %}
+        </li>
+        {% else %}
+        <li>No VMs running.</li>
+        {% endfor %}
+    </ul>
+    {% if vm_list %}
+    <button type="submit">Delete selected VMs</button>
+    {% endif %}
+</form>
+
+<p><a href="/">Back</a> to VM creation</p>
+{% endblock %}

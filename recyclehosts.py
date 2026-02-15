@@ -1,9 +1,18 @@
-import subprocess
 import json
+import os
 import random
 import string
-import time
+import subprocess
 import sys
+import time
+
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
+
+# These hosts should not be deleted (e.g. shared masters); read from .env PROTECTED_HOSTS
+_raw = os.environ.get('PROTECTED_HOSTS', '')
+PROTECTED_HOSTS = frozenset(name.strip() for name in _raw.split(',') if name.strip())
 
 def load_agents(ns):
     return json.loads(subprocess.check_output(['oc', 'get', 'agents', '-n', ns, '-o', 'json']).decode("utf-8").strip())
@@ -53,7 +62,9 @@ def delete_old_vms(names_to_mac):
         return subprocess.check_output(['./host_scripts/find_vm_by_mac.sh', mac]).decode("utf-8").strip()
 
     virshnames = [name for name in [get_virshname_from_mac(name_to_mac[1]) for name_to_mac in names_to_mac] if name]
-    subprocess.run(['./host_scripts/delete_vms.sh'] + virshnames)
+    to_delete = [name for name in virshnames if name not in PROTECTED_HOSTS]
+    if to_delete:
+        subprocess.run(['./host_scripts/delete_vms.sh'] + to_delete)
 
 def delete_old_agents(names_to_mac, ns):
     names = [name_to_mac[0] for name_to_mac in names_to_mac]
