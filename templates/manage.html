@@ -20,7 +20,8 @@
         {% endfor %}
     </ul>
     {% if vm_list %}
-    <button type="submit">Delete selected VMs</button>
+    <button type="submit" name="action" value="reboot">Reboot selected hosts</button>
+    <button type="submit" name="action" value="delete">Delete selected VMs</button>
     {% endif %}
 </form>
 

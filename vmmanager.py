@@ -130,8 +130,12 @@ def manage_vms():
         return out.split() if out else []
 
     if request.method == 'POST':
-        to_delete = request.form.getlist('vmname')
-        if to_delete:
-            subprocess.run(['./host_scripts/delete_vms.sh'] + to_delete)
+        selected = request.form.getlist('vmname')
+        action = request.form.get('action', 'delete')
+        if selected:
+            if action == 'reboot':
+                subprocess.run(['./host_scripts/reboot_vms.sh'] + selected)
+            else:
+                subprocess.run(['./host_scripts/delete_vms.sh'] + selected)
 
     return render_template('manage.html', vm_list=get_running_vms(), protected_hosts=PROTECTED_HOSTS)
